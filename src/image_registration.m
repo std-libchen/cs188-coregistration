@@ -87,14 +87,15 @@ function main()
 	% find reference point in one image first, extract a window, and use b to find the other window in the other image that gives near 1 in Y in result.
 	% problem now, the other image's windows does not encompass same orientation
 	% also, if we just generate transformation matrix using angle, scale and transition, it will be hard to configure these data
-	  
+	fin_results = [a,b,c];
+	csvwrite('cv_results_2.csv',fin_results);
 	% findTransformation
     
     
 
 end
 
-function [b, auc] = multilinear_test(X_train, X_test, Y_train, Y_test)
+function auc = multilinear_test(X_train, X_test, Y_train, Y_test)
 	% b is 200 * 1 since we have two corresponding with 100 points each
 	%X_t is 4900 * 200
 	% we have 100 windows for each image, so 4900 in total
@@ -102,7 +103,7 @@ function [b, auc] = multilinear_test(X_train, X_test, Y_train, Y_test)
 	%Y_t is 4900 * 1
 
 	b = calculateRegressionCoefficient(X_train,Y_train);
-	auc = AUC_score(X_test, Y_test, b)
+	auc = AUC_score(X_test, Y_test, b);
 end
 
 function accuracy = SRKDA_test(X_train, X_test, Y_train, Y_test)
@@ -154,8 +155,8 @@ function accuracy = SRDA_test(X_train, X_test, Y_train, Y_test)
 	[l,m] = size(Y_test);
 
  	disp(['SRDA,',num2str(l),' Training, Errorrate: ',num2str(1-accuracy),'  TrainTime: ',num2str(TimeTrain),'  TestTime: ',num2str(TimeTest)]); 
-
 end
+
 function b = calculateRegressionCoefficient(X,Y) 
 	%{
 	[a,b] = size(Y);
@@ -199,10 +200,10 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 			a = SRKDA_test(X_train, X_test, Y_train, Y_test);	
 		end
 
-		results = horzcat(results, a);
+		results = vertcat(results, a);
 	end
 	time = toc
-	results
+	display(results)
 end 
 
 
