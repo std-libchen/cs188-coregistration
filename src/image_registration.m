@@ -24,17 +24,20 @@
 
 function main()
 	display('trying to perform image registration');
+    echo off;
 
 	%get bs from all images and get the average b
 	
 
-	%get X Y first
-	for i=1:49 
+	%get X Y first (1:49)
+    cant_read = [5;8;25;27;33;36] % list of 'corrupted' image files
+    n = 49
+	for i=1:n 
 		filename = strcat(int2str(i), '.mat');
-		[X,Y] = extractXandY(filename);
+		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (registration between time domains)
 		if (i == 1)
-			X_t = X;
-			Y_t = Y;
+			X_t = X; % matrix of flair1, flair3 appended
+			Y_t = Y; % matrix of 1's, 0's (good match, bad match)
 		else
 			X_t = [X_t; X]; %#ok<*AGROW>
 			Y_t = [Y_t; Y];
@@ -46,16 +49,16 @@ function main()
 	%%%%% MULTI-LINEAR REGRESSION %%%%%
 
 	X_t = NormalizeFea(double(X_t));
-
+	
+    n_tot = (n - size(cant_read,1)) * 100; % n_tot = 4300
 	%every image has 100 windows, so 1:1000 means first ten patients' data
 
 	%set training set and testing set 
-	X_train = X_t(1:4800,:);
-	Y_train = Y_t(1:4800,:);
+	X_train = X_t(1:n_tot - 100,:); % training set from 1:4200 (first 42 patients)
+	Y_train = Y_t(1:n_tot - 100,:);
 
-	X_test = X_t(4800:4900,:);
-	Y_test = Y_t(4800:4900,:);
-
+	X_test = X_t(n_tot-101:n_tot,:); % test set is 43rd patient
+	Y_test = Y_t(n_tot-101:n_tot,:);
 
 	multilinear_test(X_train, X_test, Y_train, Y_test)
 
