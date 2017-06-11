@@ -80,15 +80,18 @@ function main()
 
 	%test transformations
 
-	a = cross_validation(X_t, Y_t, 0)
-	b = cross_validation(X_t, Y_t, 1)
-	c = cross_validation(X_t, Y_t, 2)
+	[a, a_i] = cross_validation(X_t, Y_t, 0)
+	[b, b_i] = cross_validation(X_t, Y_t, 1)
+	[c, c_i] = cross_validation(X_t, Y_t, 2)
 	%to test transformation
 	% find reference point in one image first, extract a window, and use b to find the other window in the other image that gives near 1 in Y in result.
 	% problem now, the other image's windows does not encompass same orientation
 	% also, if we just generate transformation matrix using angle, scale and transition, it will be hard to configure these data
 	fin_results = [a,b,c];
 	csvwrite('cv_results_2.csv',fin_results);
+	% fin_indices = [a_i, b_i, c_i];
+	% csvwrite('cv_indices_2.csv',fin_indices);
+	
 	% findTransformation
     
     
@@ -168,7 +171,7 @@ end
 
 %%%% validate b using untested dataset %%%%
 
-function results = cross_validation(X_tot, Y_tot, test_type)
+function [results, indices] = cross_validation(X_tot, Y_tot, test_type)
 	% X_tot consists of entire patch data, Y_tot contains entire label data, k_fold is # of cross-validation sets want to create
 	% test_type: 0 for multilinear, 1 for SRDA, 2 for SRKDA
 	n = size(X_tot,1);
@@ -176,11 +179,12 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 	set_size = n/k_fold;
 	tic;
 	results = [];
+	indices = [];
 	for i = 1:k_fold
 		% Calculating Testing Subset Indices (based on the set size, which is based off k_fold)
 		t_start = (i-1) * set_size + 1;
 		t_end = i * set_size;
-
+		indices = vertcat(indices, [t_start,t_end]);
 		% Generating Testing Subset: copying based off of indexes
 		X_test = X_tot(t_start:t_end,:);
 		Y_test = Y_tot(t_start:t_end,:);
@@ -203,17 +207,13 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 		results = vertcat(results, a);
 	end
 	time = toc
-	display(results)
+	disp(results);
 end 
 
 
 
 %test b agaisnt specific entries to get auc score
 function auc = AUC_score(X, Y, b) 
-
-	[m,n] = size(X)
-	[o,p] = size(Y)
-	display(Y);
 
 	Y_fit = X * b;
 
