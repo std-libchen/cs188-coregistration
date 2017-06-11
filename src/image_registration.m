@@ -26,9 +26,7 @@ function main()
 	display('Starting image registration');
     echo off;
 
-	% get b's from all images and get the average b (from Multi-Linear Regression)
-
-	% get X Y first (1:49)
+	% Extract X (patches) and Y (labels) from images first (1:49)
     cant_read = [5;8;25;27;33;36] % list of 'corrupted' image files
     n = 49
 	for i=1:n
@@ -46,11 +44,9 @@ function main()
 		end
 	end
 
-	% calculate b using X_t Y_T
+	% Pre-processing steps (single example of training-test split applied to 3 given models)
 
-	%%%%% MULTI-LINEAR REGRESSION %%%%%
-
-	X_t = NormalizeFea(double(X_t));
+	X_t = NormalizeFea(double(X_t)); % first normalize data
 
 	%every image has 100 windows, so 1:1000 means first ten patients' data
     n_tot = (n - size(cant_read,1)) * 100; % n_tot = 4300
@@ -62,9 +58,9 @@ function main()
 	X_test = X_t(n_tot-101:n_tot,:); % test set is 43rd patient
 	Y_test = Y_t(n_tot-101:n_tot,:);
 
-
+	%%%%% MULTI-LINEAR REGRESSION %%%%%	
+	
 	multilinear_test(X_train, X_test, Y_train, Y_test);
-
 
 	%%%%% SPECTRAL REGRESSION %%%%%
 
@@ -78,17 +74,20 @@ function main()
 	SRKDA_test(X_train, X_test, Y_train, Y_test);
 
 
-	%test transformations
+	%%%%% CROSS-VALIDATION TESTING %%%%%
 
 	[a, a_i] = cross_validation(X_t, Y_t, 0)
 	[b, b_i] = cross_validation(X_t, Y_t, 1)
 	[c, c_i] = cross_validation(X_t, Y_t, 2)
+	
 	%to test transformation
 	% find reference point in one image first, extract a window, and use b to find the other window in the other image that gives near 1 in Y in result.
 	% problem now, the other image's windows does not encompass same orientation
 	% also, if we just generate transformation matrix using angle, scale and transition, it will be hard to configure these data
+	
 	fin_results = [a,b,c];
 	csvwrite('cv_results_2.csv',fin_results);
+	
 	% fin_indices = [a_i, b_i, c_i];
 	% csvwrite('cv_indices_2.csv',fin_indices);
 	
@@ -169,7 +168,7 @@ function b = calculateRegressionCoefficient(X,Y)
 	b = regress(Y, X);
 end
 
-%%%% validate b using untested dataset %%%%
+%%%% Cross-Validation %%%%
 
 function [results, indices] = cross_validation(X_tot, Y_tot, test_type)
 	% X_tot consists of entire patch data, Y_tot contains entire label data, k_fold is # of cross-validation sets want to create
@@ -211,8 +210,7 @@ function [results, indices] = cross_validation(X_tot, Y_tot, test_type)
 end 
 
 
-
-%test b agaisnt specific entries to get auc score
+%%%% ROC Score Generation %%%%
 function auc = AUC_score(X, Y, b) 
 
 	Y_fit = X * b;
@@ -227,7 +225,7 @@ function auc = AUC_score(X, Y, b)
 	title('RECEIVER OPERATING CHARACTERISTIC (ROC)');
 end
 
-%%% Y are labels while X are patch windows %%%
+%%% X (patch data) and Y (label data) Extraction from Raw Image %%%
 function [X, Y] = extractXandY(filename)
 	load(filename);
 %     im_1 = flair1;
@@ -236,7 +234,7 @@ function [X, Y] = extractXandY(filename)
 %     ref_im_2 = ref_flair3
     
 	display(['processing',' ', filename]);
-	%use cp2tform to calculate the transformation matrix
+	%use cp2tform to calculate the 'ground truth' transformation matrix between two reference layers
 	t = cp2tform(pt_flair1, pt_flair3, 'affine');
 
 	display(t.tdata.Tinv);
@@ -262,14 +260,14 @@ function [X, Y] = extractXandY(filename)
 	[m,n,l] = size(patch_window_f1);
 
 	%use these points to calculate b in regression
-	%make an array of ones
+	%making labels for 'good' patch pairs (array of 1's)
 
 	y_good = ones(l, 1);
 
 	x_f1_vec = reshape(patch_window_f1, [m*n,l]);
 	x_f3_vec = reshape(patch_window_f3, [m*n,l]);
 
-	% matching patches
+	% Matching patches
 
 	% 200 * 50
 
@@ -278,7 +276,7 @@ function [X, Y] = extractXandY(filename)
 	[m,n] = size(x_vec_total_good);
 
 
-	%create bad matches
+	%making labels for 'bad' patch pairs (array of 0's)
 	y_bad = zeros(l, 1);
 
 
@@ -313,10 +311,11 @@ function [X, Y] = extractXandY(filename)
 	Y = y;
 
 end
-% extract patches for image
+
+%%%% Image Patch Extraction %%%%
 function [win] = extractPatch(img, pty, ptx)
 
-	winSize = 10;
+	winSize = 10; % dim of 'window' used (n by n square)
 	x = floor(winSize/2);
 	if (mod(winSize, 2) == 1)
 		ys = x;
@@ -338,7 +337,6 @@ function [win] = extractPatch(img, pty, ptx)
     	norm_tmp = tmp - min(tmp(:));
     	norm_tmp = norm_tmp ./ max(norm_tmp(:));
 	    win(:,:,i) = norm_tmp(:,:);
-	     % win(i+1, :) = tmp(2,:);
 	end
 
 	% figure
@@ -371,8 +369,8 @@ end
 %    matrix = mean(potential_transforms, 3);
 %end
 
-%%%%% ROC functions %%%%%%
 
+%%%%% ROC functions %%%%%%
 
 function [tp, fp] = roc(t, y)
 %
