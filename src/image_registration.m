@@ -1,24 +1,19 @@
-%%%% general method %%%%%
+%%%% Code Overview %%%%%
 
-%%%% Phase 1
-%%%% Get multi-linear coefficient from regression on selected patches after flair3 has been 
-%%%% transformed to match flair1. We get corresponding pixel values in X, and vectorized it into
-%%%% a row vector. We then match each one vector with a label. 
+%%%% Outline of main():
+%%%% 1. Extract image patches (as pixel intensity values) and generate labels (as column matrix of 1's and 0's) from raw image data 
+%%%%	(comparing given reference points for specific slices)
+%%%% 2. Normalize the image intensity values (between 0 and 1)
+%%%% 3. Run sample test
+%%%%	 Generate training and testing data
+%%%%	 Apply each of the 3 models (Multilinear Regression, SRDA, SRKDA)
+%%%% 4. Cross-Validation results
+%%%%	 Generate accuracy data from cross-validation of dataset
+%%%%	 Essentially combination of multiple sample tests
+%%%% 5. Create .csv with results
 
-
-%%%% Phase 2
-%%%% We can use b to multiply with a similar vector, in an attempt to find whether it gives a value close to 1
-%%%% We get average b from multiple sets of data so we can use it in the training set.
-%%%% Our target is to find the correct transformation of flair3. We test it with different transformations, until we find
-%%%% the transformation that will give X-values that lead to most number of 1s.
-%%%% and we recrod the transformation matrix, and then visualize the result.
-
-
-%%%%% Sample Result
-%%%%% auc =
-
-%%%%%    0.5494
-
+%%%%% Sample Results
+%%%%%    (multilinear): auc = 0.5494
 %%%%%    SRDA,101 Training, Errorrate: 0.51485  TrainTime: 0.46731  TestTime: 0.0070598
 %%%%%    SRKDA,101 Training, Errorrate: 0.37624  TrainTime: 1.9942  TestTime: 0.026137
 
@@ -34,7 +29,7 @@ function main()
             continue
         end
 		filename = strcat(int2str(i), '.mat');
-		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (registration over time)
+		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (temporal registration)
 		if (i == 1)
 			X_t = X; % matrix of flair1, flair3 appended
 			Y_t = Y; % matrix of 1's, 0's (good match, bad match)
