@@ -284,6 +284,13 @@ function [X, Y] = extractXandY(filename)
 
 	%retake points and construct windows for bad matches
 	ref_pts2 = extractPoints(flair3(:,:,round(ref_flair3)));
+    [f3width,f3height] = size(flair3(:,:,round(ref_flair3)));
+    for i=1:50
+        while(ref_pts(i,1) == ref_pts2(i,1) && ref_pts(i,2) == ref_pts2(i,2))
+            ref_pts(i,1)=randi([30,f3height-30]);
+        end
+    end
+    
 	patch_window_f3_bad = extractPatch(flair3(:,:,round(ref_flair3)), ref_pts2(:,2), ref_pts2(:,1));
 	[m,n,l] = size(patch_window_f3_bad);
 
@@ -346,11 +353,23 @@ function points = extractPoints(img)
 	%randomly pick points
 	%to prevent reaching border when building patches, we have 30 as offset
 	%50 random points for each image
-	points = [randi([50,n-50],1,50); randi([50,m-50],1,50)];
+	points = [randi([30,n-30],1,50); randi([30,m-30],1,50)];
 	points = points';
 end
 
-
+%function matrix = RANSACmatrix(pts_bv)
+    %find best transformation matrix using RANSAC on matching patches
+    %input is a x by 2 matrix of patch centers and their best b-values
+    %loop: 100? times
+        %randomly choose 3 points from set
+        %loop: 8? times
+            %cp2transform to find transformation from 3 patches
+            %perform transformation, find patches which have b > threshold
+        %append matrix so that it is 3x3x100 at end
+ %       potential_transforms
+    %average found matrices
+%    matrix = mean(potential_transforms, 3);
+%end
 
 %%%%% ROC functions %%%%%%
 
