@@ -63,7 +63,7 @@ function main()
 	Y_test = Y_t(n_tot-101:n_tot,:);
 
 
-	multilinear_test(X_train, X_test, Y_train, Y_test)
+	multilinear_test(X_train, X_test, Y_train, Y_test);
 
 
 	%%%%% SPECTRAL REGRESSION %%%%%
@@ -80,6 +80,9 @@ function main()
 
 	%test transformations
 
+	a = cross_validation(X_t, Y_t, 0)
+	b = cross_validation(X_t, Y_t, 1)
+	c = cross_validation(X_t, Y_t, 2)
 	%to test transformation
 	% find reference point in one image first, extract a window, and use b to find the other window in the other image that gives near 1 in Y in result.
 	% problem now, the other image's windows does not encompass same orientation
@@ -100,7 +103,6 @@ function [b, auc] = multilinear_test(X_train, X_test, Y_train, Y_test)
 
 	b = calculateRegressionCoefficient(X_train,Y_train);
 	auc = AUC_score(X_test, Y_test, b)
-
 end
 
 function accuracy = SRKDA_test(X_train, X_test, Y_train, Y_test)
@@ -127,7 +129,6 @@ function accuracy = SRKDA_test(X_train, X_test, Y_train, Y_test)
 	[l,m] = size(Y_test);
 
  	disp(['SRKDA,',num2str(l),' Training, Errorrate: ',num2str(1-accuracy),'  TrainTime: ',num2str(TimeTrain),'  TestTime: ',num2str(TimeTest)]); 
-
 end
 
 function accuracy = SRDA_test(X_train, X_test, Y_train, Y_test)
@@ -172,22 +173,22 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 	n = size(X_tot,1);
 	k_fold = n / 100; % k_fold fixed in this case, since data organized in 100's
 	set_size = n/k_fold;
-
-	results = []
+	tic;
+	results = [];
 	for i = 1:k_fold
 		% Calculating Testing Subset Indices (based on the set size, which is based off k_fold)
-		t_start = (i-1) * set_size + 1
-		t_end = i * set_size
+		t_start = (i-1) * set_size + 1;
+		t_end = i * set_size;
 
 		% Generating Testing Subset: copying based off of indexes
-		X_test = X_tot(t_start:t_end,:) 
-		Y_test = Y_tot(t_start:t_end,:)
+		X_test = X_tot(t_start:t_end,:);
+		Y_test = Y_tot(t_start:t_end,:);
 
 		% Generating Training Subset: copy entire array, and then removing testing subset 
-		X_train = X_tot 
-		Y_train = Y_tot
-		X_train([t_start:t_end], :) = [] 
-		Y_train([t_start:t_end], :) = []
+		X_train = X_tot;
+		Y_train = Y_tot;
+		X_train([t_start:t_end], :) = [];
+		Y_train([t_start:t_end], :) = [];
 
 		% selecting which test to perform
 		if test_type == 0
@@ -198,8 +199,10 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 			a = SRKDA_test(X_train, X_test, Y_train, Y_test);	
 		end
 
-		results = horzcat(results, a)
+		results = horzcat(results, a);
 	end
+	time = toc
+	results
 end 
 
 
@@ -221,8 +224,6 @@ function auc = AUC_score(X, Y, b)
 	xlabel('FALSE POSITIVE RATE');
 	ylabel('TRUE POSITIVE RATE');
 	title('RECEIVER OPERATING CHARACTERISTIC (ROC)');
-
-
 end
 
 %%% Y are labels while X are patch windows %%%
@@ -346,8 +347,6 @@ function points = extractPoints(img)
 	%50 random points for each image
 	points = [randi([50,n-50],1,50); randi([50,m-50],1,50)];
 	points = points';
-
-
 end
 
 
