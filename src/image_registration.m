@@ -170,7 +170,7 @@ end
 
 function results = cross_validation(X_tot, Y_tot, test_type)
 	% X_tot consists of entire patch data, Y_tot contains entire label data, k_fold is # of cross-validation sets want to create
-	% test_type: 0 for multilinear, 1 for SRKDA, 2 for SRDA
+	% test_type: 0 for multilinear, 1 for SRDA, 2 for SRKDA
 	n = size(X_tot,1);
 	k_fold = n / 100; % k_fold fixed in this case, since data organized in 100's
 	set_size = n/k_fold;
@@ -195,7 +195,7 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 		if test_type == 0
 			a = multilinear_test(X_train, X_test, Y_train, Y_test);
 		elseif test_type == 1
-			a = SRKDA_test(X_train, X_test, Y_train, Y_test);
+			a = SRDA_test(X_train, X_test, Y_train, Y_test);
 		else
 			a = SRKDA_test(X_train, X_test, Y_train, Y_test);	
 		end
