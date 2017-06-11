@@ -355,19 +355,55 @@ function points = extractPoints(img)
 	points = points';
 end
 
-%function matrix = RANSACmatrix(pts_bv)
+function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
     %find best transformation matrix using RANSAC on matching patches
-    %input is a x by 2 matrix of patch centers and their best b-values
-    %loop: 100? times
-        %randomly choose 3 points from set
-        %loop: 8? times
+    %inputs are x by 2 matrices of patch centers, in image 1 and 2
+    [dim1,dim2] = size(pts1);
+    %amount of times to run loops
+    first = 100;
+    second = 10;
+    times_error = 0;
+    %y threshold for allowing points into RANSAC
+    threshold = 0.6;
+    %patches from img2
+    img2_patches = extractPatch(img2, pts2(:,2), pts2(:,1));
+    for i=1:first
+        %randomly choose 3 indices of the pt array
+        chosen_indices = randperm(dim1,3);
+        for j=1:second
+            %turn indices into points
+            chosen_pts1=pts1(chosen_indices,:);
+            chosen_pts2=pts2(chosen_indices,:);
             %cp2transform to find transformation from 3 patches
-            %perform transformation, find patches which have b > threshold
-        %append matrix so that it is 3x3x100 at end
- %       potential_transforms
-    %average found matrices
-%    matrix = mean(potential_transforms, 3);
-%end
+            try
+                found_transform = cp2tform(chosen_pts1, chosen_pts2, 'affine');
+            catch
+                %when the points are collinear
+                found_matrix = [0 0 0; 0 0 0; 0 0 0];
+                times_error = times_error + 1;
+                break;
+            end
+            found_matrix = found_transform.tdata.T;
+            %perform transformation
+            trans_img1 = imtransform(double(img1), found_transform, 'bicubic', 'XData', [1 size(img1,2)],'YData', [1 size(img1,1)]);
+            %find transformed patches
+            trans_img1_patches = extractPatch(img1, pts1(:,2), pts1(:,1));
+            %compute y using b and patches
+            y = [trans_img1_patches, img2_patches]*b;
+            %find patches which have y > threshold, add centers to the chosen points list
+            chosen_indices = [];
+            for l = 1:dim1
+               if(y(l) > threshold)
+                   chosen_indices = [chosen_indices, l]
+               end
+            end
+        end
+        %add matrix so that it is 3x3 matrix of total element values
+        total_transform_matrix = total_transform_matrix + found_matrix;
+    end
+    %find average matrix
+    matrix = total_transform_matrix./(first - times_error);
+end
 
 
 %%%%% ROC functions %%%%%%
