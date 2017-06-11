@@ -11,7 +11,7 @@
 %%%% We get average b from multiple sets of data so we can use it in the training set.
 %%%% Our target is to find the correct transformation of flair3. We test it with different transformations, until we find
 %%%% the transformation that will give X-values that lead to most number of 1s.
-%%%% and we record the transformation matrix, and then visualize the result.
+%%%% and we recrod the transformation matrix, and then visualize the result.
 
 
 %%%%% Sample Result
@@ -23,35 +23,37 @@
 %%%%%    SRKDA,101 Training, Errorrate: 0.37624  TrainTime: 1.9942  TestTime: 0.026137
 
 function main()
-	display('trying to perform image registration');
+	display('Starting image registration');
     echo off;
 
-	%get bs from all images and get the average b
-	
+	% get b's from all images and get the average b (from Multi-Linear Regression)
 
-	%get X Y first (1:49)
+	% get X Y first (1:49)
     cant_read = [5;8;25;27;33;36] % list of 'corrupted' image files
     n = 49
-	for i=1:n 
+	for i=1:n
+        if (any(i==cant_read))
+            continue
+        end
 		filename = strcat(int2str(i), '.mat');
-		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (registration between time domains)
+		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (registration over time)
 		if (i == 1)
 			X_t = X; % matrix of flair1, flair3 appended
 			Y_t = Y; % matrix of 1's, 0's (good match, bad match)
 		else
-			X_t = [X_t; X]; %#ok<*AGROW>
+			X_t = [X_t; X];
 			Y_t = [Y_t; Y];
 		end
 	end
 
-	%calculate b using X_t Y_t
+	% calculate b using X_t Y_T
 
 	%%%%% MULTI-LINEAR REGRESSION %%%%%
 
 	X_t = NormalizeFea(double(X_t));
-	
-    n_tot = (n - size(cant_read,1)) * 100; % n_tot = 4300
+
 	%every image has 100 windows, so 1:1000 means first ten patients' data
+    n_tot = (n - size(cant_read,1)) * 100; % n_tot = 4300
 
 	%set training set and testing set 
 	X_train = X_t(1:n_tot - 100,:); % training set from 1:4200 (first 42 patients)
@@ -59,6 +61,7 @@ function main()
 
 	X_test = X_t(n_tot-101:n_tot,:); % test set is 43rd patient
 	Y_test = Y_t(n_tot-101:n_tot,:);
+
 
 	multilinear_test(X_train, X_test, Y_train, Y_test)
 
@@ -83,9 +86,12 @@ function main()
 	% also, if we just generate transformation matrix using angle, scale and transition, it will be hard to configure these data
 	  
 	% findTransformation
+    
+    
 
 end
-function multilinear_test(X_train, X_test, Y_train, Y_test)
+
+function [b, auc] = multilinear_test(X_train, X_test, Y_train, Y_test)
 	% b is 200 * 1 since we have two corresponding with 100 points each
 	%X_t is 4900 * 200
 	% we have 100 windows for each image, so 4900 in total
@@ -97,7 +103,7 @@ function multilinear_test(X_train, X_test, Y_train, Y_test)
 
 end
 
-function SRKDA_test(X_train, X_test, Y_train, Y_test)
+function accuracy = SRKDA_test(X_train, X_test, Y_train, Y_test)
 
 	%SRKDA
 
@@ -124,7 +130,7 @@ function SRKDA_test(X_train, X_test, Y_train, Y_test)
 
 end
 
-function SRDA_test(X_train, X_test, Y_train, Y_test)
+function accuracy = SRDA_test(X_train, X_test, Y_train, Y_test)
 	%SRDA
 
 	options = []; 
@@ -150,16 +156,50 @@ function SRDA_test(X_train, X_test, Y_train, Y_test)
 
 end
 function b = calculateRegressionCoefficient(X,Y) 
-	%[a,b] = size(Y);
-	%[c,d] = size(X);
+	%{
+	[a,b] = size(Y);
+	[c,d] = size(X);
+	%}
+	
 	b = regress(Y, X);
 end
 
 %%%% validate b using untested dataset %%%%
 
-function cross_validation(b, X, Y)
+function results = cross_validation(X_tot, Y_tot, test_type)
+	% X_tot consists of entire patch data, Y_tot contains entire label data, k_fold is # of cross-validation sets want to create
+	% test_type: 0 for multilinear, 1 for SRKDA, 2 for SRDA
+	n = size(X_tot)[1];
+	k_fold = n / 100; % k_fold fixed in this case, since data organized in 100's
+	set_size = n/k_fold;
 
-	auc = AUC_score(X, Y, b)
+	results = []
+	for i = 1:k_fold
+		% Calculating Testing Subset Indices (based on the set size, which is based off k_fold)
+		t_start = (i-1) * set_size + 1
+		t_end = i * set_size
+
+		% Generating Testing Subset: copying based off of indexes
+		X_test = X_tot(t_start:t_end,:) 
+		Y_test = Y_tot(t_start:t_end,:)
+
+		% Generating Training Subset: copy entire array, and then removing testing subset 
+		X_train = X_tot 
+		Y_train = Y_tot
+		X_train([t_start:t_end], :) = [] 
+		Y_train([t_start:t_end], :) = []
+
+		% selecting which test to perform
+		if test_type == 0
+			a = multilinear_test(X_train, X_test, Y_train, Y_test);
+		elseif test_type == 1
+			a = SRKDA_test(X_train, X_test, Y_train, Y_test);
+		else
+			a = SRKDA_test(X_train, X_test, Y_train, Y_test);	
+		end
+
+		results = horzcat(results, a)
+	
 end 
 
 
@@ -188,18 +228,24 @@ end
 %%% Y are labels while X are patch windows %%%
 function [X, Y] = extractXandY(filename)
 	load(filename);
-	display(strcat('processing ', filename));
-	
-    %use cp2tform to calculate the transformation matrix
-	t = cp2tform(pt_flair1, pt_flair3, 'affine'); %#ok<*DCPTF>
+%     im_1 = flair1;
+%     im_2 = flair3;
+%     ref_im_1 = ref_flair1
+%     ref_im_2 = ref_flair3
+    
+	display(['processing',' ', filename]);
+	%use cp2tform to calculate the transformation matrix
+	t = cp2tform(pt_flair1, pt_flair3, 'affine');
 
-	%use imtransform/imwarp to transform
-	%rFlair1 is the translated image (flair1)
-	rFlair1 =  imtransform(double(flair1(:,:,round(ref_flair1))), t, 'bicubic', 'XData', [1 size(flair3,2)],'YData', [1 size(flair3,1)]); %#ok<*DIMTRNS,*NODEF>
+	display(t.tdata.Tinv);
 
-	%extract points
+	%use imtrasform/imwarp to transform
+	%rFlair1 is the translated image
+	rFlair1 =  imtransform(double(flair1(:,:,round(ref_flair1))), t, 'bicubic', 'XData', [1 size(flair3,2)],'YData', [1 size(flair3,1)]);
+
+	% Validating Transform
 	%reference points are points that match across images
-	%50 random points
+	%extract 50 random points
 	ref_pts = extractPoints(flair3(:,:,round(ref_flair3)));
 
 	%extract patches for each point;
@@ -210,25 +256,24 @@ function [X, Y] = extractXandY(filename)
 
 	display('examining size');
 
-	%10,10,50
-	[m,n,l] = size(patch_window_f1)
+	%10*10*50
+	[m,n,l] = size(patch_window_f1);
 
 	%use these points to calculate b in regression
 	%make an array of ones
 
 	y_good = ones(l, 1);
 
-    % 100 pixels of a window in a column, 50 columns
 	x_f1_vec = reshape(patch_window_f1, [m*n,l]);
 	x_f3_vec = reshape(patch_window_f3, [m*n,l]);
 
 	% matching patches
 
-	% 2 * 100 * 50
+	% 200 * 50
 
 	x_vec_total_good = [x_f1_vec; x_f3_vec];
 
-	[m,n] = size(x_vec_total_good)
+	[m,n] = size(x_vec_total_good);
 
 
 	%create bad matches
@@ -243,6 +288,7 @@ function [X, Y] = extractXandY(filename)
 	x_f3_vec_bad = reshape(patch_window_f3_bad, [m*n,l]);
 
 	x_vec_total_bad = [x_f1_vec; x_f3_vec_bad];
+
 
 	%now we have bad matches
 
@@ -298,7 +344,7 @@ function points = extractPoints(img)
 	%randomly pick points
 	%to prevent reaching border when building patches, we have 30 as offset
 	%50 random points for each image
-	points = [randi([30,n-30],1,50); randi([30,m-30],1,50)];
+	points = [randi([50,n-50],1,50); randi([50,m-50],1,50)];
 	points = points';
 
 
@@ -414,7 +460,6 @@ fp(n) = 1;
 fp    = fp(1:n);
 tp    = tp(1:n);
 
-% bye bye...
 end
 
 function A = auroc(tp, fp)
@@ -476,7 +521,4 @@ function A = auroc(tp, fp)
 n = size(tp, 1);
 A = sum((fp(2:n) - fp(1:n-1)).*(tp(2:n)+tp(1:n-1)))/2;
 
-% bye bye...
-
 end
-
