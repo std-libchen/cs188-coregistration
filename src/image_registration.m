@@ -169,7 +169,7 @@ end
 function results = cross_validation(X_tot, Y_tot, test_type)
 	% X_tot consists of entire patch data, Y_tot contains entire label data, k_fold is # of cross-validation sets want to create
 	% test_type: 0 for multilinear, 1 for SRKDA, 2 for SRDA
-	n = size(X_tot)[1];
+	n = size(X_tot,1);
 	k_fold = n / 100; % k_fold fixed in this case, since data organized in 100's
 	set_size = n/k_fold;
 
@@ -199,7 +199,7 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 		end
 
 		results = horzcat(results, a)
-	
+	end
 end 
 
 
