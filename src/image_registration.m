@@ -37,9 +37,11 @@ function main()
 			X_t = [X_t; X];
 			Y_t = [Y_t; Y];
 		end
-	end
-
-	% Pre-processing steps (single example of training-test split applied to 3 given models)
+    end
+    
+    %X_unmodified = X_t;
+    
+    % Pre-processing steps (single example of training-test split applied to 3 given models)
 
 	X_t = NormalizeFea(double(X_t)); % first normalize data
 
@@ -49,10 +51,24 @@ function main()
 	%set training set and testing set 
 	X_train = X_t(1:n_tot - 100,:); % training set from 1:4200 (first 42 patients)
 	Y_train = Y_t(1:n_tot - 100,:);
+    %X_unmodified_train = X_unmodified(1:n_tot - 100,:);
 
 	X_test = X_t(n_tot-101:n_tot,:); % test set is 43rd patient
 	Y_test = Y_t(n_tot-101:n_tot,:);
+    %X_unmodified_test = X_unmodified(n_tot-101:n_tot,:);
 
+    %%%%% MULTI-LINEAR MATCHING %%%%%	
+    %y threshold for allowing points into RANSAC
+    threshold = 0.6;
+    b = regress(Y_train, X_train);
+    load(strcat(int2str(49), '.mat'));
+    img1 = flair1(:,:,ref_flair1); %#ok<NODEF>
+    img2 = flair3(:,:,ref_flair3); %#ok<NODEF>
+    [pts1, pts2] = findPatches(img1, img2, b, threshold);
+    matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold);
+    display(matrix);
+    %imshow?
+    
 	%%%%% MULTI-LINEAR REGRESSION %%%%%	
 	
 	multilinear_test(X_train, X_test, Y_train, Y_test);
@@ -270,14 +286,13 @@ function [X, Y] = extractXandY(filename)
 
 	[m,n] = size(x_vec_total_good);
 
-
 	%making labels for 'bad' patch pairs (array of 0's)
 	y_bad = zeros(l, 1);
 
-
 	%retake points and construct windows for bad matches
 	ref_pts2 = extractPoints(flair3(:,:,round(ref_flair3)));
-    [f3height,f3width] = size(flair3(:,:,round(ref_flair3)));
+    [~,f3width] = size(flair3(:,:,round(ref_flair3)));
+    %reroll if the same value is in good values and bad values
     for i=1:50
         while(ref_pts(i,1) == ref_pts2(i,1) && ref_pts(i,2) == ref_pts2(i,2))
             ref_pts(i,1)=randi([30,f3width-30]);
@@ -338,7 +353,6 @@ function [win] = extractPatch(img, pty, ptx)
 	% imshow(win(:,:,1), []);
 end
 
-
 function points = extractPoints(img)
 	%extract points from this image
 	[m,n] = size(img);
@@ -350,22 +364,72 @@ function points = extractPoints(img)
 	points = points';
 end
 
-%function [pts1, pts2] = findPatches(img1, img2, b)
-    %[m,n] = size(img1);
-    %points = [randi([30,n-30],1,200); randi([30,m-30],1,200)];
-	%points = points';
-%end
+function output_pts = filterLowVariation(img, input_pts)
+    [amount,~] = size(input_pts);
+    patches = extractPatch(img, input_pts(:,2), input_pts(:,1));
+    patches = reshape(patches, [100,amount]);
+    means = mean(patches);
+    minimums = min(patches);
+    maximums = max(patches);
+    allowed = zeros(1,amount);
+    for index=1:amount
+       if(maximums(index)-means(index) > 10 && means(index) - minimums(index) > 10)
+           allowed(index) = 1;
+       end
+    end
+    output_pts = input_pts(allowed, :);
+end
 
-function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
+function [pts1, pts2] = findPatches(img1, img2, b, threshold)
+    %basically same inputs as RANSAC matrix
+    [m1,n1] = size(img1);
+    [m2,n2] = size(img2);
+    %two lists of random points
+    randomlength = 400;
+    possible_pts1 = [randi([30,n1-30],1,randomlength); randi([30,m1-30],1,randomlength)];
+	possible_pts1 = possible_pts1';
+    possible_pts2 = [randi([30,n2-30],1,randomlength); randi([30,m2-30],1,randomlength)];
+    possible_pts2 = possible_pts2';
+    %exclude patches without variation in intensities
+    %possible_pts1 = filterLowVariation(img1, possible_pts1);
+    %possible_pts2 = filterLowVariation(img2, possible_pts2);
+    %match for best y-value
+    [ind1,~] = size(possible_pts1);
+    [ind2,~] = size(possible_pts2);
+    pts1 = [];
+    pts2 = [];
+    %find matches between pts1 and pts2 in the images
+    for index1=1:ind1
+        maxyvalue = 0;
+        bestindex = 0;
+        patch1 = extractPatch(img1, possible_pts1(ind1,2), possible_pts1(ind1,1));
+        %maximum y-value out of the img2 patches
+        for index2=1:ind2
+            patch2 = extractPatch(img2, possible_pts1(ind2,2), possible_pts1(ind2,1));
+            yvalue = [patch1, patch2]*b;
+            if(yvalue > maxyvalue)
+                bestindex = index2;
+                maxyvalue = yvalue;
+            end
+        end
+        %only allow good matches
+        if(maxb > threshold)
+            pts1 = [pts1;possible_pts1(index1,:)]; %#ok<*AGROW>
+            pts2 = [pts2;possible_pts2(bestindex,:)];
+        end
+    end  
+end
+
+function matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold)
     %find best transformation matrix using RANSAC on matching patches
     %inputs are x by 2 matrices of patch centers, in image 1 and 2
+    %b is weights for multilinear
+    %threshold is lowest y-value allowed in RANSAC
     [dim1,~] = size(pts1);
     %amount of times to run loops
     first = 100;
     second = 10;
     times_error = 0;
-    %y threshold for allowing points into RANSAC
-    threshold = 0.6;
     %patches from img2
     img2_patches = extractPatch(img2, pts2(:,2), pts2(:,1));
     for i=1:first
