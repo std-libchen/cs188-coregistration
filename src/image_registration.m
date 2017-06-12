@@ -198,7 +198,7 @@ function [results, indices] = cross_validation(X_tot, Y_tot, test_type)
 			a = SRKDA_test(X_train, X_test, Y_train, Y_test);	
 		end
 
-		results = vertcat(results, a);
+		results = vertcat(results, a); %#ok<AGROW>
 	end
 	time = toc
 	disp(results);
@@ -277,10 +277,10 @@ function [X, Y] = extractXandY(filename)
 
 	%retake points and construct windows for bad matches
 	ref_pts2 = extractPoints(flair3(:,:,round(ref_flair3)));
-    [f3width,f3height] = size(flair3(:,:,round(ref_flair3)));
+    [f3height,f3width] = size(flair3(:,:,round(ref_flair3)));
     for i=1:50
         while(ref_pts(i,1) == ref_pts2(i,1) && ref_pts(i,2) == ref_pts2(i,2))
-            ref_pts(i,1)=randi([30,f3height-30]);
+            ref_pts(i,1)=randi([30,f3width-30]);
         end
     end
     
@@ -359,7 +359,7 @@ end
 function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
     %find best transformation matrix using RANSAC on matching patches
     %inputs are x by 2 matrices of patch centers, in image 1 and 2
-    [dim1,dim2] = size(pts1);
+    [dim1,~] = size(pts1);
     %amount of times to run loops
     first = 100;
     second = 10;
@@ -377,7 +377,7 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
             chosen_pts2=pts2(chosen_indices,:);
             %cp2transform to find transformation from 3 patches
             try
-                found_transform = cp2tform(chosen_pts1, chosen_pts2, 'affine');
+                found_transform = cp2tform(chosen_pts1, chosen_pts2, 'affine'); %#ok<*DCPTF>
             catch
                 %when the points are collinear
                 found_matrix = [0 0 0; 0 0 0; 0 0 0];
@@ -386,7 +386,7 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
             end
             found_matrix = found_transform.tdata.T;
             %perform transformation
-            trans_img1 = imtransform(double(img1), found_transform, 'bicubic', 'XData', [1 size(img1,2)],'YData', [1 size(img1,1)]);
+            trans_img1 = imtransform(double(img1), found_transform, 'bicubic', 'XData', [1 size(img1,2)],'YData', [1 size(img1,1)]); %#ok<*DIMTRNS>
             %find transformed patches
             trans_img1_patches = extractPatch(trans_img1, pts1(:,2), pts1(:,1));
             %normalize X for computing Y
@@ -398,7 +398,7 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
             chosen_indices = [];
             for l = 1:dim1
                if(y(l) > threshold)
-                   chosen_indices = [chosen_indices, l]
+                   chosen_indices = [chosen_indices, l]; %#ok<AGROW>
                end
             end
         end
