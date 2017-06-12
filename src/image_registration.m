@@ -65,6 +65,19 @@ function main()
 
 	multilinear_test(X_train, X_test, Y_train, Y_test);
 
+    %%%%% MULTI-LINEAR MATCHING %%%%%	
+    %y threshold for allowing points into RANSAC
+    threshold = 0.15;
+    b = regress(Y_train, X_train);
+    load(strcat(int2str(49), '.mat'));
+    img1 = flair1(:,:,ref_flair1); %#ok<NODEF>
+    img2 = flair3(:,:,ref_flair3); %#ok<NODEF>
+    [pts1, pts2] = findPatches(img1, img2, b, threshold);
+    [numpts, ~]= size(pts1);
+    if(numpts>3)
+    matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold);
+    display(matrix);
+    end
 
 	%%%%% SPECTRAL REGRESSION %%%%%
 
@@ -349,7 +362,146 @@ function points = extractPoints(img)
 	points = points';
 end
 
+function output_pts = filterLowVariation(img, input_pts)
+    [amount,~] = size(input_pts);
+    patches = extractPatch(img, input_pts(:,2), input_pts(:,1));
+    patches = reshape(patches, [100,amount]);
+    means = mean(patches);
+    minimums = min(patches);
+    maximums = max(patches);
+    allowed = zeros(1,amount);
+    for index=1:amount
+       if(maximums(index)-means(index) > 10 && means(index) - minimums(index) > 10)
+           allowed(index) = 1;
+       end
+    end
+    output_pts = input_pts(allowed, :);
+end
 
+function [pts1, pts2] = findPatches(img1, img2, b, threshold)
+    %basically same inputs as RANSAC matrix
+    [m1,n1] = size(img1);
+    [m2,n2] = size(img2);
+    randomlength = 600;
+    %random list of points in x, but compared against all points in y
+    possible_pts1 = [randi([30,n1-30],1,randomlength); randi([30,m1-30],1,randomlength)];
+	possible_pts1 = possible_pts1';
+    %%faster way, two lists of random points
+     possible_pts2 = [randi([30,n2-30],1,randomlength); randi([30,m2-30],1,randomlength)];
+     possible_pts2 = possible_pts2';
+    %exclude patches without variation in intensities
+    %possible_pts1 = filterLowVariation(img1, possible_pts1);
+    %possible_pts2 = filterLowVariation(img2, possible_pts2);
+    %match for best y-value
+    [ind1max,~] = size(possible_pts1);
+    [ind2max,~] = size(possible_pts2);
+    %%for when you want to exhaustively check points
+    %[img2height,img2width] = size(img2);
+    %ind2max = img2width - 30;
+    %ind3max = img2height - 30;
+    pts1 = [];
+    pts2 = [];
+    %find matches in the images, add to pts1 & pts2
+    for ind1=1:ind1max
+        maxyvalue = 0;
+        bestindex = 0;
+        patch1 = extractPatch(img1, possible_pts1(ind1,2), possible_pts1(ind1,1));
+        patch1 = reshape(patch1, [1,100]);
+        %maximum y-value out of the img2 patches (fast way)
+        for ind2=1:ind2max
+            patch2 = extractPatch(img2, possible_pts2(ind2,2), possible_pts2(ind2,1));
+            patch2 = reshape(patch2, [1,100]);
+            %NormalizeFea doesn't work for this input
+            intensities = [patch1, patch2];
+            magnitude = sum(intensities.^2);
+            intensities = intensities./magnitude;
+            yvalue = intensities*b;
+            if(yvalue > maxyvalue)
+                bestindex = ind2;
+                maxyvalue = yvalue;
+            end
+        end
+        %maximum y-value out of the img2 patches (slow way)
+%         for ind2=30:ind2max
+%             for ind3=30:ind3max
+%                 patch2 = extractPatch(img2, ind3, ind2);
+%                 patch2 = reshape(patch2, [1,100]);
+%                 %NormalizeFea doesn't work for this input
+%                 intensities = [patch1, patch2];
+%                 magnitude = sum(intensities.^2);
+%                 intensities = intensities./magnitude;
+%                 yvalue = intensities*b;
+%                 if(yvalue > maxyvalue)
+%                     best_pt = [ind2, ind3];
+%                     maxyvalue = yvalue;
+%                 end
+%             end
+%         end
+        display(maxyvalue);
+        %only allow good matches
+        if(maxyvalue > threshold)
+            pts1 = [pts1;possible_pts1(ind1,:)]; %#ok<*AGROW>
+            %fast way
+            pts2 = [pts2;possible_pts2(bestindex,:)];
+            %slow way
+%            pts2 = [pts2;best_pt];
+        end
+    end  
+end
+
+function matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold)
+    %find best transformation matrix using RANSAC on matching patches
+    %inputs are x by 2 matrices of patch centers, in image 1 and 2
+    %b is weights for multilinear
+    %threshold is lowest y-value allowed in RANSAC
+    [dim1,~] = size(pts1);
+    total_transform_matrix=[0 0 0; 0 0 0; 0 0 0];
+    %amount of times to run loops
+    first = 100;
+    second = 10;
+    times_error = 0;
+    %patches from img2
+    img2_patches = extractPatch(img2, pts2(:,2), pts2(:,1));
+    for i=1:first
+        %randomly choose 3 indices of the pt array
+        chosen_indices = randperm(dim1,3);
+        for j=1:second
+            %turn indices into points
+            chosen_pts1=pts1(chosen_indices,:);
+            chosen_pts2=pts2(chosen_indices,:);
+            %cp2transform to find transformation from 3 patches
+            try
+                found_transform = cp2tform(chosen_pts1, chosen_pts2, 'affine'); %#ok<*DCPTF>
+            catch
+                %when the points are collinear
+                found_matrix = [0 0 0; 0 0 0; 0 0 0];
+                times_error = times_error + 1;
+                break;
+            end
+            found_matrix = found_transform.tdata.T;
+            %perform transformation
+            trans_img1 = imtransform(double(img1), found_transform, 'bicubic', 'XData', [1 size(img1,2)],'YData', [1 size(img1,1)]); %#ok<*DIMTRNS>
+            %find transformed patches
+            trans_img1_patches = extractPatch(trans_img1, pts1(:,2), pts1(:,1));
+            %normalize X for computing Y
+            X = [trans_img1_patches, img2_patches];
+            X= NormalizeFea(X);
+            %compute y using b and patches
+            y = X*b;
+            %find patches which have y > threshold, add centers to the chosen points list
+            chosen_indices = [];
+            for l = 1:dim1
+               if(y(l) > threshold)
+                   chosen_indices = [chosen_indices, l]; %#ok<AGROW>
+               end
+            end
+        end
+        %add matrix so that it is 3x3 matrix of total element values
+        total_transform_matrix = total_transform_matrix + found_matrix;
+    end
+    %find average matrix
+    matrix = total_transform_matrix./(first - times_error);
+end
 
 %%%%% ROC functions %%%%%%
 
