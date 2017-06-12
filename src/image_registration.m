@@ -350,6 +350,12 @@ function points = extractPoints(img)
 	points = points';
 end
 
+%function [pts1, pts2] = findPatches(img1, img2, b)
+    %[m,n] = size(img1);
+    %points = [randi([30,n-30],1,200); randi([30,m-30],1,200)];
+	%points = points';
+%end
+
 function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
     %find best transformation matrix using RANSAC on matching patches
     %inputs are x by 2 matrices of patch centers, in image 1 and 2
@@ -382,9 +388,12 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b)
             %perform transformation
             trans_img1 = imtransform(double(img1), found_transform, 'bicubic', 'XData', [1 size(img1,2)],'YData', [1 size(img1,1)]);
             %find transformed patches
-            trans_img1_patches = extractPatch(img1, pts1(:,2), pts1(:,1));
+            trans_img1_patches = extractPatch(trans_img1, pts1(:,2), pts1(:,1));
+            %normalize X for computing Y
+            X = [trans_img1_patches, img2_patches];
+            X= NormalizeFea(double(X));
             %compute y using b and patches
-            y = [trans_img1_patches, img2_patches]*b;
+            y = X*b;
             %find patches which have y > threshold, add centers to the chosen points list
             chosen_indices = [];
             for l = 1:dim1
