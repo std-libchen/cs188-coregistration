@@ -73,6 +73,20 @@ function main()
 	
 	multilinear_test(X_train, X_test, Y_train, Y_test);
 
+    %%%%% MULTI-LINEAR MATCHING %%%%%	
+    %y threshold for allowing points into RANSAC
+%     threshold = 0.15;
+%     b = regress(Y_train, X_train);
+%     load(strcat(int2str(49), '.mat'));
+%     img1 = flair1(:,:,ref_flair1); %#ok<NODEF>
+%     img2 = flair3(:,:,ref_flair3); %#ok<NODEF>
+%     [pts1, pts2] = findPatches(img1, img2, b, threshold);
+%     [numpts, ~]= size(pts1);
+%     if(numpts>3)
+%     matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold);
+%     display(matrix);
+%     end
+
 	%%%%% SPECTRAL REGRESSION %%%%%
 
 	%% SRDA %%
@@ -472,7 +486,6 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold)
     %find average matrix
     matrix = total_transform_matrix./(first - times_error);
 end
-
 
 %%%%% ROC functions %%%%%%
 
