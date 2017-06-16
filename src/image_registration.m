@@ -1,24 +1,19 @@
-%%%% general method %%%%%
+%%%% Code Overview %%%%%
 
-%%%% Phase 1
-%%%% Get multi-linear coefficient from regression on selected patches after flair3 has been 
-%%%% transformed to match flair1. We get corresponding pixel values in X, and vectorized it into
-%%%% a row vector. We then match each one vector with a label. 
+%%%% Outline of main():
+%%%% 1. Extract image patches (as pixel intensity values) and generate labels (as column matrix of 1's and 0's) from raw image data 
+%%%%	(comparing given reference points for specific slices)
+%%%% 2. Normalize the image intensity values (between 0 and 1)
+%%%% 3. Run sample test
+%%%%	 Generate training and testing data
+%%%%	 Apply each of the 3 models (Multilinear Regression, SRDA, SRKDA)
+%%%% 4. Cross-Validation results
+%%%%	 Generate accuracy data from cross-validation of dataset
+%%%%	 Essentially combination of multiple sample tests
+%%%% 5. Create .csv with results
 
-
-%%%% Phase 2
-%%%% We can use b to multiply with a similar vector, in an attempt to find whether it gives a value close to 1
-%%%% We get average b from multiple sets of data so we can use it in the training set.
-%%%% Our target is to find the correct transformation of flair3. We test it with different transformations, until we find
-%%%% the transformation that will give X-values that lead to most number of 1s.
-%%%% and we recrod the transformation matrix, and then visualize the result.
-
-
-%%%%% Sample Result
-%%%%% auc =
-
-%%%%%    0.5494
-
+%%%%% Sample Results
+%%%%%    (multilinear): auc = 0.5494
 %%%%%    SRDA,101 Training, Errorrate: 0.51485  TrainTime: 0.46731  TestTime: 0.0070598
 %%%%%    SRKDA,101 Training, Errorrate: 0.37624  TrainTime: 1.9942  TestTime: 0.026137
 
@@ -26,9 +21,7 @@ function main()
 	display('Starting image registration');
     echo off;
 
-	% get b's from all images and get the average b (from Multi-Linear Regression)
-
-	% get X Y first (1:49)
+	% Extract X (patches) and Y (labels) from images first (1:49)
     cant_read = [5;8;25;27;33;36] % list of 'corrupted' image files
     n = 49
 	for i=1:n
@@ -36,7 +29,7 @@ function main()
             continue
         end
 		filename = strcat(int2str(i), '.mat');
-		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (registration over time)
+		[X,Y] = extractXandY(filename); % Currently extracting flair1, flair3 images (temporal registration)
 		if (i == 1)
 			X_t = X; % matrix of flair1, flair3 appended
 			Y_t = Y; % matrix of 1's, 0's (good match, bad match)
@@ -44,13 +37,13 @@ function main()
 			X_t = [X_t; X];
 			Y_t = [Y_t; Y];
 		end
-	end
+    end
+    
+    %X_unmodified = X_t;
+    
+    % Pre-processing steps (single example of training-test split applied to 3 given models)
 
-	% calculate b using X_t Y_T
-
-	%%%%% MULTI-LINEAR REGRESSION %%%%%
-
-	X_t = NormalizeFea(double(X_t));
+	X_t = NormalizeFea(double(X_t)); % first normalize data
 
 	%every image has 100 windows, so 1:1000 means first ten patients' data
     n_tot = (n - size(cant_read,1)) * 100; % n_tot = 4300
@@ -58,11 +51,26 @@ function main()
 	%set training set and testing set 
 	X_train = X_t(1:n_tot - 100,:); % training set from 1:4200 (first 42 patients)
 	Y_train = Y_t(1:n_tot - 100,:);
+    %X_unmodified_train = X_unmodified(1:n_tot - 100,:);
 
 	X_test = X_t(n_tot-101:n_tot,:); % test set is 43rd patient
 	Y_test = Y_t(n_tot-101:n_tot,:);
+    %X_unmodified_test = X_unmodified(n_tot-101:n_tot,:);
 
-
+    %%%%% MULTI-LINEAR MATCHING %%%%%	
+    %y threshold for allowing points into RANSAC
+    threshold = 0.6;
+    b = regress(Y_train, X_train);
+    load(strcat(int2str(49), '.mat'));
+    img1 = flair1(:,:,ref_flair1); %#ok<NODEF>
+    img2 = flair3(:,:,ref_flair3); %#ok<NODEF>
+    [pts1, pts2] = findPatches(img1, img2, b, threshold);
+    matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold);
+    display(matrix);
+    %imshow?
+    
+	%%%%% MULTI-LINEAR REGRESSION %%%%%	
+	
 	multilinear_test(X_train, X_test, Y_train, Y_test);
 
     %%%%% MULTI-LINEAR MATCHING %%%%%	
@@ -91,23 +99,30 @@ function main()
 	SRKDA_test(X_train, X_test, Y_train, Y_test);
 
 
-	%test transformations
+	%%%%% CROSS-VALIDATION TESTING %%%%%
 
-	a = cross_validation(X_t, Y_t, 0)
-	b = cross_validation(X_t, Y_t, 1)
-	c = cross_validation(X_t, Y_t, 2)
+	[a, a_i] = cross_validation(X_t, Y_t, 0)
+	[b, b_i] = cross_validation(X_t, Y_t, 1)
+	[c, c_i] = cross_validation(X_t, Y_t, 2)
+	
 	%to test transformation
 	% find reference point in one image first, extract a window, and use b to find the other window in the other image that gives near 1 in Y in result.
 	% problem now, the other image's windows does not encompass same orientation
 	% also, if we just generate transformation matrix using angle, scale and transition, it will be hard to configure these data
-	  
+	
+	fin_results = [a,b,c];
+	csvwrite('cv_results_2.csv',fin_results);
+	
+	% fin_indices = [a_i, b_i, c_i];
+	% csvwrite('cv_indices_2.csv',fin_indices);
+	
 	% findTransformation
     
     
 
 end
 
-function [b, auc] = multilinear_test(X_train, X_test, Y_train, Y_test)
+function auc = multilinear_test(X_train, X_test, Y_train, Y_test)
 	% b is 200 * 1 since we have two corresponding with 100 points each
 	%X_t is 4900 * 200
 	% we have 100 windows for each image, so 4900 in total
@@ -115,7 +130,7 @@ function [b, auc] = multilinear_test(X_train, X_test, Y_train, Y_test)
 	%Y_t is 4900 * 1
 
 	b = calculateRegressionCoefficient(X_train,Y_train);
-	auc = AUC_score(X_test, Y_test, b)
+	auc = AUC_score(X_test, Y_test, b);
 end
 
 function accuracy = SRKDA_test(X_train, X_test, Y_train, Y_test)
@@ -167,8 +182,8 @@ function accuracy = SRDA_test(X_train, X_test, Y_train, Y_test)
 	[l,m] = size(Y_test);
 
  	disp(['SRDA,',num2str(l),' Training, Errorrate: ',num2str(1-accuracy),'  TrainTime: ',num2str(TimeTrain),'  TestTime: ',num2str(TimeTest)]); 
-
 end
+
 function b = calculateRegressionCoefficient(X,Y) 
 	%{
 	[a,b] = size(Y);
@@ -178,21 +193,22 @@ function b = calculateRegressionCoefficient(X,Y)
 	b = regress(Y, X);
 end
 
-%%%% validate b using untested dataset %%%%
+%%%% Cross-Validation %%%%
 
-function results = cross_validation(X_tot, Y_tot, test_type)
+function [results, indices] = cross_validation(X_tot, Y_tot, test_type)
 	% X_tot consists of entire patch data, Y_tot contains entire label data, k_fold is # of cross-validation sets want to create
-	% test_type: 0 for multilinear, 1 for SRKDA, 2 for SRDA
+	% test_type: 0 for multilinear, 1 for SRDA, 2 for SRKDA
 	n = size(X_tot,1);
 	k_fold = n / 100; % k_fold fixed in this case, since data organized in 100's
 	set_size = n/k_fold;
 	tic;
 	results = [];
+	indices = [];
 	for i = 1:k_fold
 		% Calculating Testing Subset Indices (based on the set size, which is based off k_fold)
 		t_start = (i-1) * set_size + 1;
 		t_end = i * set_size;
-
+		indices = vertcat(indices, [t_start,t_end]);
 		% Generating Testing Subset: copying based off of indexes
 		X_test = X_tot(t_start:t_end,:);
 		Y_test = Y_tot(t_start:t_end,:);
@@ -207,25 +223,20 @@ function results = cross_validation(X_tot, Y_tot, test_type)
 		if test_type == 0
 			a = multilinear_test(X_train, X_test, Y_train, Y_test);
 		elseif test_type == 1
-			a = SRKDA_test(X_train, X_test, Y_train, Y_test);
+			a = SRDA_test(X_train, X_test, Y_train, Y_test);
 		else
 			a = SRKDA_test(X_train, X_test, Y_train, Y_test);	
 		end
 
-		results = horzcat(results, a);
+		results = vertcat(results, a); %#ok<AGROW>
 	end
 	time = toc
-	results
+	disp(results);
 end 
 
 
-
-%test b agaisnt specific entries to get auc score
+%%%% ROC Score Generation %%%%
 function auc = AUC_score(X, Y, b) 
-
-	[m,n] = size(X)
-	[o,p] = size(Y)
-	display(Y);
 
 	Y_fit = X * b;
 
@@ -239,7 +250,7 @@ function auc = AUC_score(X, Y, b)
 	title('RECEIVER OPERATING CHARACTERISTIC (ROC)');
 end
 
-%%% Y are labels while X are patch windows %%%
+%%% X (patch data) and Y (label data) Extraction from Raw Image %%%
 function [X, Y] = extractXandY(filename)
 	load(filename);
 %     im_1 = flair1;
@@ -248,7 +259,7 @@ function [X, Y] = extractXandY(filename)
 %     ref_im_2 = ref_flair3
     
 	display(['processing',' ', filename]);
-	%use cp2tform to calculate the transformation matrix
+	%use cp2tform to calculate the 'ground truth' transformation matrix between two reference layers
 	t = cp2tform(pt_flair1, pt_flair3, 'affine');
 
 	display(t.tdata.Tinv);
@@ -274,14 +285,14 @@ function [X, Y] = extractXandY(filename)
 	[m,n,l] = size(patch_window_f1);
 
 	%use these points to calculate b in regression
-	%make an array of ones
+	%making labels for 'good' patch pairs (array of 1's)
 
 	y_good = ones(l, 1);
 
 	x_f1_vec = reshape(patch_window_f1, [m*n,l]);
 	x_f3_vec = reshape(patch_window_f3, [m*n,l]);
 
-	% matching patches
+	% Matching patches
 
 	% 200 * 50
 
@@ -289,13 +300,19 @@ function [X, Y] = extractXandY(filename)
 
 	[m,n] = size(x_vec_total_good);
 
-
-	%create bad matches
+	%making labels for 'bad' patch pairs (array of 0's)
 	y_bad = zeros(l, 1);
-
 
 	%retake points and construct windows for bad matches
 	ref_pts2 = extractPoints(flair3(:,:,round(ref_flair3)));
+    [~,f3width] = size(flair3(:,:,round(ref_flair3)));
+    %reroll if the same value is in good values and bad values
+    for i=1:50
+        while(ref_pts(i,1) == ref_pts2(i,1) && ref_pts(i,2) == ref_pts2(i,2))
+            ref_pts(i,1)=randi([30,f3width-30]);
+        end
+    end
+    
 	patch_window_f3_bad = extractPatch(flair3(:,:,round(ref_flair3)), ref_pts2(:,2), ref_pts2(:,1));
 	[m,n,l] = size(patch_window_f3_bad);
 
@@ -318,10 +335,11 @@ function [X, Y] = extractXandY(filename)
 	Y = y;
 
 end
-% extract patches for image
+
+%%%% Image Patch Extraction %%%%
 function [win] = extractPatch(img, pty, ptx)
 
-	winSize = 10;
+	winSize = 10; % dim of 'window' used (n by n square)
 	x = floor(winSize/2);
 	if (mod(winSize, 2) == 1)
 		ys = x;
@@ -343,13 +361,11 @@ function [win] = extractPatch(img, pty, ptx)
     	norm_tmp = tmp - min(tmp(:));
     	norm_tmp = norm_tmp ./ max(norm_tmp(:));
 	    win(:,:,i) = norm_tmp(:,:);
-	     % win(i+1, :) = tmp(2,:);
 	end
 
 	% figure
 	% imshow(win(:,:,1), []);
 end
-
 
 function points = extractPoints(img)
 	%extract points from this image
@@ -358,7 +374,7 @@ function points = extractPoints(img)
 	%randomly pick points
 	%to prevent reaching border when building patches, we have 30 as offset
 	%50 random points for each image
-	points = [randi([50,n-50],1,50); randi([50,m-50],1,50)];
+	points = [randi([30,n-30],1,50); randi([30,m-30],1,50)];
 	points = points';
 end
 
@@ -382,69 +398,38 @@ function [pts1, pts2] = findPatches(img1, img2, b, threshold)
     %basically same inputs as RANSAC matrix
     [m1,n1] = size(img1);
     [m2,n2] = size(img2);
-    randomlength = 600;
-    %random list of points in x, but compared against all points in y
+    %two lists of random points
+    randomlength = 400;
     possible_pts1 = [randi([30,n1-30],1,randomlength); randi([30,m1-30],1,randomlength)];
 	possible_pts1 = possible_pts1';
-    %%faster way, two lists of random points
-     possible_pts2 = [randi([30,n2-30],1,randomlength); randi([30,m2-30],1,randomlength)];
-     possible_pts2 = possible_pts2';
+    possible_pts2 = [randi([30,n2-30],1,randomlength); randi([30,m2-30],1,randomlength)];
+    possible_pts2 = possible_pts2';
     %exclude patches without variation in intensities
     %possible_pts1 = filterLowVariation(img1, possible_pts1);
     %possible_pts2 = filterLowVariation(img2, possible_pts2);
     %match for best y-value
-    [ind1max,~] = size(possible_pts1);
-    [ind2max,~] = size(possible_pts2);
-    %%for when you want to exhaustively check points
-    %[img2height,img2width] = size(img2);
-    %ind2max = img2width - 30;
-    %ind3max = img2height - 30;
+    [ind1,~] = size(possible_pts1);
+    [ind2,~] = size(possible_pts2);
     pts1 = [];
     pts2 = [];
-    %find matches in the images, add to pts1 & pts2
-    for ind1=1:ind1max
+    %find matches between pts1 and pts2 in the images
+    for index1=1:ind1
         maxyvalue = 0;
         bestindex = 0;
         patch1 = extractPatch(img1, possible_pts1(ind1,2), possible_pts1(ind1,1));
-        patch1 = reshape(patch1, [1,100]);
-        %maximum y-value out of the img2 patches (fast way)
-        for ind2=1:ind2max
-            patch2 = extractPatch(img2, possible_pts2(ind2,2), possible_pts2(ind2,1));
-            patch2 = reshape(patch2, [1,100]);
-            %NormalizeFea doesn't work for this input
-            intensities = [patch1, patch2];
-            magnitude = sum(intensities.^2);
-            intensities = intensities./magnitude;
-            yvalue = intensities*b;
+        %maximum y-value out of the img2 patches
+        for index2=1:ind2
+            patch2 = extractPatch(img2, possible_pts1(ind2,2), possible_pts1(ind2,1));
+            yvalue = [patch1, patch2]*b;
             if(yvalue > maxyvalue)
-                bestindex = ind2;
+                bestindex = index2;
                 maxyvalue = yvalue;
             end
         end
-        %maximum y-value out of the img2 patches (slow way)
-%         for ind2=30:ind2max
-%             for ind3=30:ind3max
-%                 patch2 = extractPatch(img2, ind3, ind2);
-%                 patch2 = reshape(patch2, [1,100]);
-%                 %NormalizeFea doesn't work for this input
-%                 intensities = [patch1, patch2];
-%                 magnitude = sum(intensities.^2);
-%                 intensities = intensities./magnitude;
-%                 yvalue = intensities*b;
-%                 if(yvalue > maxyvalue)
-%                     best_pt = [ind2, ind3];
-%                     maxyvalue = yvalue;
-%                 end
-%             end
-%         end
-        display(maxyvalue);
         %only allow good matches
-        if(maxyvalue > threshold)
-            pts1 = [pts1;possible_pts1(ind1,:)]; %#ok<*AGROW>
-            %fast way
+        if(maxb > threshold)
+            pts1 = [pts1;possible_pts1(index1,:)]; %#ok<*AGROW>
             pts2 = [pts2;possible_pts2(bestindex,:)];
-            %slow way
-%            pts2 = [pts2;best_pt];
         end
     end  
 end
@@ -455,7 +440,6 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold)
     %b is weights for multilinear
     %threshold is lowest y-value allowed in RANSAC
     [dim1,~] = size(pts1);
-    total_transform_matrix=[0 0 0; 0 0 0; 0 0 0];
     %amount of times to run loops
     first = 100;
     second = 10;
@@ -485,7 +469,7 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold)
             trans_img1_patches = extractPatch(trans_img1, pts1(:,2), pts1(:,1));
             %normalize X for computing Y
             X = [trans_img1_patches, img2_patches];
-            X= NormalizeFea(X);
+            X= NormalizeFea(double(X));
             %compute y using b and patches
             y = X*b;
             %find patches which have y > threshold, add centers to the chosen points list
@@ -504,7 +488,6 @@ function matrix = RANSACmatrix(pts1, pts2, img1, img2, b, threshold)
 end
 
 %%%%% ROC functions %%%%%%
-
 
 function [tp, fp] = roc(t, y)
 %
